@@ -1,5 +1,5 @@
 # kubectl apply -f k8s/deploy.yaml
-# Fill in OIDC_CLIENT_SECRET in the Secret before applying.
+# Fill in secret values before applying.
 
 apiVersion: v1
 kind: Namespace
@@ -15,9 +15,7 @@ metadata:
   namespace: whiteboard
 type: Opaque
 stringData:
-  OIDC_CLIENT_SECRET: ""  # set this before applying
-  # JWT_SECRET and CSRF_SECRET are auto-generated and persisted in the volume
-  # on first start if left blank. Set explicit values for portability.
+  OIDC_CLIENT_SECRET: ""
   JWT_SECRET: ""
   CSRF_SECRET: ""
 
@@ -77,13 +75,28 @@ spec:
       containers:
         - name: backend
           image: zimengxiong/excalidash-backend:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
           envFrom:
             - configMapRef:
                 name: whiteboard-config
-            - secretRef:
-                name: whiteboard-secrets
+          env:
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: whiteboard-secrets
+                  key: OIDC_CLIENT_SECRET
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: whiteboard-secrets
+                  key: JWT_SECRET
+            - name: CSRF_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: whiteboard-secrets
+                  key: CSRF_SECRET
           volumeMounts:
             - name: data
               mountPath: /app/prisma
@@ -93,13 +106,6 @@ spec:
               port: 8000
             initialDelaySeconds: 15
             periodSeconds: 30
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 8000
-            initialDelaySeconds: 5
-            periodSeconds: 10
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -139,6 +145,7 @@ spec:
       containers:
         - name: frontend
           image: ghcr.io/pablo-george/whiteboard-frontend:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 80
           env:
@@ -173,10 +180,8 @@ metadata:
   name: whiteboard
   namespace: whiteboard
   annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.tls: "true"
-    # Uncomment if using cert-manager for automatic TLS:
-    # cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: traefik
   rules:
@@ -193,4 +198,4 @@ spec:
   tls:
     - hosts:
         - whiteboard.plainclover.com
-      secretName: whiteboard-tls
+      secretName: whiteboard-plainclover-com-tls
