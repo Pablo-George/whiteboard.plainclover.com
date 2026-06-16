@@ -1,0 +1,196 @@
+# kubectl apply -f k8s/deploy.yaml
+# Fill in OIDC_CLIENT_SECRET in the Secret before applying.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: whiteboard
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: whiteboard-secrets
+  namespace: whiteboard
+type: Opaque
+stringData:
+  OIDC_CLIENT_SECRET: ""  # set this before applying
+  # JWT_SECRET and CSRF_SECRET are auto-generated and persisted in the volume
+  # on first start if left blank. Set explicit values for portability.
+  JWT_SECRET: ""
+  CSRF_SECRET: ""
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: whiteboard-config
+  namespace: whiteboard
+data:
+  DATABASE_URL: "file:/app/prisma/dev.db"
+  PORT: "8000"
+  NODE_ENV: "production"
+  TRUST_PROXY: "1"
+  FRONTEND_URL: "https://whiteboard.plainclover.com"
+  ENFORCE_HTTPS_REDIRECT: "false"
+  AUTH_MODE: "oidc_enforced"
+  OIDC_PROVIDER_NAME: "Keycloak"
+  OIDC_ISSUER_URL: "https://auth.plainclover.com/realms/homelab"
+  OIDC_CLIENT_ID: "whiteboard-app"
+  OIDC_REDIRECT_URI: "https://whiteboard.plainclover.com/api/auth/oidc/callback"
+  OIDC_SCOPES: "openid profile email"
+  OIDC_REQUIRE_EMAIL_VERIFIED: "false"
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: whiteboard-backend-data
+  namespace: whiteboard
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whiteboard-backend
+  namespace: whiteboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: whiteboard-backend
+  template:
+    metadata:
+      labels:
+        app: whiteboard-backend
+    spec:
+      containers:
+        - name: backend
+          image: zimengxiong/excalidash-backend:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: whiteboard-config
+            - secretRef:
+                name: whiteboard-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /app/prisma
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: whiteboard-backend-data
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: whiteboard-backend
+  namespace: whiteboard
+spec:
+  selector:
+    app: whiteboard-backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whiteboard-frontend
+  namespace: whiteboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: whiteboard-frontend
+  template:
+    metadata:
+      labels:
+        app: whiteboard-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/pablo-george/whiteboard-frontend:latest
+          ports:
+            - containerPort: 80
+          env:
+            - name: BACKEND_URL
+              value: "whiteboard-backend:8000"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 30
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: whiteboard-frontend
+  namespace: whiteboard
+spec:
+  selector:
+    app: whiteboard-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+
+---
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: whiteboard
+  namespace: whiteboard
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    # Uncomment if using cert-manager for automatic TLS:
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: whiteboard.plainclover.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: whiteboard-frontend
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - whiteboard.plainclover.com
+      secretName: whiteboard-tls
