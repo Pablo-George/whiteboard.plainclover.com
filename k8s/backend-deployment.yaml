@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whiteboard-backend
+  namespace: whiteboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: whiteboard-backend
+  template:
+    metadata:
+      labels:
+        app: whiteboard-backend
+    spec:
+      containers:
+        - name: backend
+          image: zimengxiong/excalidash-backend:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: whiteboard-config
+            - secretRef:
+                name: whiteboard-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /app/prisma
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: whiteboard-backend-data

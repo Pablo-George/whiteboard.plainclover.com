@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: whiteboard-config
+  namespace: whiteboard
+data:
+  DATABASE_URL: "file:/app/prisma/dev.db"
+  PORT: "8000"
+  NODE_ENV: "production"
+  TRUST_PROXY: "1"
+  FRONTEND_URL: "https://whiteboard.plainclover.com"
+  ENFORCE_HTTPS_REDIRECT: "false"
+  AUTH_MODE: "oidc_enforced"
+  OIDC_PROVIDER_NAME: "Keycloak"
+  OIDC_ISSUER_URL: "https://auth.plainclover.com/realms/homelab"
+  OIDC_CLIENT_ID: "whiteboard-app"
+  OIDC_REDIRECT_URI: "https://whiteboard.plainclover.com/api/auth/oidc/callback"
+  OIDC_SCOPES: "openid profile email"
+  OIDC_REQUIRE_EMAIL_VERIFIED: "false"

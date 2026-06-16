@@ -1,0 +1,80 @@
+services:
+  backend:
+    image: zimengxiong/excalidash-backend:latest
+    container_name: excalidash-backend
+    environment:
+      - DATABASE_URL=file:/app/prisma/dev.db
+      - PORT=8000
+      - NODE_ENV=development
+      - TRUST_PROXY=1
+      - FRONTEND_URL=${EXCALIDASH_PUBLIC_URL}
+      - ENFORCE_HTTPS_REDIRECT=false
+
+      # Auth
+      - AUTH_MODE=oidc_enforced
+      - JWT_SECRET=${JWT_SECRET}
+      - CSRF_SECRET=${CSRF_SECRET}
+
+      # Keycloak OIDC
+      - OIDC_PROVIDER_NAME=Keycloak
+      - OIDC_ISSUER_URL=${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
+      - OIDC_REDIRECT_URI=${EXCALIDASH_PUBLIC_URL}/api/auth/oidc/callback
+      - OIDC_SCOPES=openid profile email
+      - OIDC_REQUIRE_EMAIL_VERIFIED=false
+
+      # Optional: map a Keycloak group to ExcaliDash admin
+      # - OIDC_GROUPS_CLAIM=groups
+      # - OIDC_ADMIN_GROUPS=excalidash-admins
+    volumes:
+      - backend-data:/app/prisma
+    networks:
+      - excalidash-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:8000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./src
+      dockerfile: frontend/Dockerfile
+    container_name: excalidash-frontend
+    environment:
+      - BACKEND_URL=backend:8000
+    ports:
+      - "6767:80"
+    depends_on:
+      - backend
+    networks:
+      - excalidash-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:80",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  excalidash-network:
+    driver: bridge
+
+volumes:
+  backend-data:

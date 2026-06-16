@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whiteboard-frontend
+  namespace: whiteboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: whiteboard-frontend
+  template:
+    metadata:
+      labels:
+        app: whiteboard-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/pablo-george/whiteboard-frontend:latest
+          ports:
+            - containerPort: 80
+          env:
+            - name: BACKEND_URL
+              value: "whiteboard-backend:8000"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 30
